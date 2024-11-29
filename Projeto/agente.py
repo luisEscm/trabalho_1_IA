@@ -5,6 +5,7 @@ from mesa.space import MultiGrid
 from mesa.time import SimultaneousActivation
 import random
 
+
 class Item(Agent):
     def __init__(self, model, item_type, pontos):
         super().__init__(model)
@@ -373,7 +374,9 @@ class AgenteBaseadoEmObjetivos(Agent):
         if self.pos == self.model.base:
             self.entregar_item()
 
-def visualize_model(model, step_number, fig_width=10, fig_height=10):
+
+def visualize_model(ax, model, step_number):
+    # Cria uma matriz vazia para representar o grid
     grid = np.full((model.grid.width, model.grid.height), "", dtype=object)
 
     # Mark destination
@@ -385,11 +388,6 @@ def visualize_model(model, step_number, fig_width=10, fig_height=10):
         x, y = agent.pos
         agent_class = type(agent).__name__
         print(f"Agent {agent.unique_id} at position ({x}, {y}) is of class {agent_class}")
-        # Agente Reativo Simples = AR
-        # Agente baseado em EStados = AE
-        # Agente baseado em Objetivos = AO
-        # Agente Cooperativo = AC
-        # Agente BDI = AB
 
         if isinstance(agent, ReativoSimples) or isinstance(agent, AgentEstados) or isinstance(agent, AgenteBaseadoEmObjetivos):
             nome = agent.nome
@@ -416,25 +414,26 @@ def visualize_model(model, step_number, fig_width=10, fig_height=10):
     for item in model.items_metal:
         if not item.carregado_por:
             x, y = item.pos
-            grid[x, y] += f"MR{item.unique_id}"
-    # Add double items to the grid
+            grid[x, y] += f"MR{item.unique_id} "
+
     for item in model.items_estrutura:
         if not item.carregado_por:
             x, y = item.pos
             grid[x, y] += f"EA{item.unique_id} "
 
-    plt.figure(figsize=(fig_width, fig_height))
+    # Atualiza o conteúdo do eixo
+    ax.clear()  # Limpa o eixo para a próxima atualização
     for x in range(model.grid.width):
         for y in range(model.grid.height):
-            plt.text(y, x, grid[x, y], ha='center', va='center', color='white', fontsize=12,
-                     bbox=dict(facecolor='gray', edgecolor='white', boxstyle='round,pad=0.3'))
-    plt.xlim(-0.5, model.grid.width - 0.5)
-    plt.ylim(-0.5, model.grid.height - 0.5)
-    plt.xticks(range(model.grid.width))
-    plt.yticks(range(model.grid.height))
-    plt.grid()
-    plt.title(f'Step {step_number}')
-    plt.show()
+            ax.text(y, x, grid[x, y], ha='center', va='center', color='white', fontsize=12,
+                    bbox=dict(facecolor='gray', edgecolor='white', boxstyle='round,pad=0.3'))
+
+    ax.set_xlim(-0.5, model.grid.width - 0.5)
+    ax.set_ylim(-0.5, model.grid.height - 0.5)
+    ax.set_xticks(range(model.grid.width))
+    ax.set_yticks(range(model.grid.height))
+    ax.grid()
+    ax.set_title(f'Step {step_number}')
 
 class RandomWalkModel(Model):
     def __init__(self, agents, width, height, num_cristais, num_metais, num_estrutura_old, base, seed=None):
@@ -544,12 +543,21 @@ MEMORIA_COMPARTILHADA_AGENTES_ESTADO = np.full((width, height), "Desconhecido", 
 # Create the model
 model = RandomWalkModel(agents, width, height, num_cristais, num_metais, num_estruturas_old, base)
 
-# Run the model and visualize each step with adjustable image size
-fig_width = 8  # Adjust figure width
-fig_height = 8  # Adjust figure height
+
+# Define o loop principal do modelo
+fig, ax = plt.subplots(figsize=(10, 10))  # Cria a figura e o eixo fora da função
+plt.ion()  # Ativa o modo interativo
+
 for step in range(num_steps):
-    visualize_model(model, step, fig_width, fig_height)
-    model.step()
+    visualize_model(ax, model, step)  # Atualiza a mesma janela
+    plt.pause(1)  # Aguarda 0.5 segundo antes da próxima atualização
+    model.step()  # Realiza o próximo passo no modelo
+
+plt.ioff()  # Desativa o modo interativo
+plt.show()  # Mantém a janela aberta ao final da simulação
+
+
+
 
 
 print(f"Contribuição total: {model.contribuicao_total}")
@@ -557,4 +565,3 @@ for agent in model.schedule.agents:
     #if isinstance(agent,ReativoSimples):
     nome = agent.nome
     print(f"Contribuição do agente {nome}{agent.unique_id}: {agent.contribuicao}")
-
