@@ -16,6 +16,7 @@ class Item(Agent):
 
     def step(self):
         pass
+
 def caminho_para_destino(posicao_atual, base, grid):
     """
     Calcula o caminho mais curto para a base.
@@ -46,12 +47,14 @@ def caminho_para_destino(posicao_atual, base, grid):
 
     # Se já estiver na base, mantém a posição
     return posicao_atual
+
 class ReativoSimples(Agent):
     def __init__(self, model):
         super().__init__(model)
         self.has_item = False
         self.item = None
         self.contribuicao = 0
+        self.quant_itens_entregues = 0
         self.nome = "AR"
 
     def pegar_item(self, item):
@@ -60,28 +63,15 @@ class ReativoSimples(Agent):
             self.item = item
             item.carregado_por = [self]
 
-        elif item.type == "Estrutura Antiga" and len(item.carregado_por) < 2:
-            item.carregado_por.append(self)
-            if len(item.carregado_por) == 2:
-                for agent in item.carregado_por:
-                    agent.has_item = True
-                    agent.item = item
-
     def entregar_item(self):
         if self.item:
             self.contribuicao += self.item.pontos
-            #if self.item.type == "Cristal Energético" or self.item.type == "Metal Raro":
+            self.quant_itens_entregues += 1
 
             self.has_item = False
             self.item.carregado_por = []
             self.model.remove_item(self.item)
             self.item = None
-
-            #elif self.item.type == "Estrutura Antiga":
-            #    if self in self.item.carregado:
-            #      self.item.carregado.remove(self)
-            #    if not self.item.carregado:
-            #        self.item = None
 
     def verificar_item(self, possiveis_passos):
         tem = False
@@ -100,14 +90,7 @@ class ReativoSimples(Agent):
         return item, passo_
 
     def step(self):
-        #if self.has_item:
-        #    self.move_towards(self.model.destination)
-        #    if self.pos == self.model.destination:
-        #        print(f"Agent {self.unique_id} delivered the item!")
-        #        self.drop_item()
-        #else:
         possible_steps = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
-        #possible_steps = [pos for pos in possible_steps if not self.model.is_obstacle(pos)]
 
         if possible_steps:  # Se há posições disponíveis:
             if not self.has_item:  # Caso o agente não tenha um item:
@@ -134,6 +117,7 @@ class ReativoSimples(Agent):
 
         if self.pos == self.model.base:
             self.entregar_item()
+
 class AgentEstados(Agent):
     def __init__(self, model):
         super().__init__(model)
