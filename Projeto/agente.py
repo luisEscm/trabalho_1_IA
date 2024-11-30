@@ -308,6 +308,7 @@ class AgenteBaseadoEmObjetivos(Agent):
         self.contribuicao = 0
         self.nome = "ABO"
         self.conhece_itens = []  # Inicializa a lista de itens conhecidos vazia
+        self.emBuscaPor = None
 
     def atualizar_informacoes_ambiente(self):
         """
@@ -339,6 +340,7 @@ class AgenteBaseadoEmObjetivos(Agent):
             self.item.carregado_por = []
             self.model.remove_item(self.item)
             self.item = None
+            self.emBuscaPor = None
 
     def step(self):
         # Atualiza os itens conhecidos no início de cada passo
@@ -346,34 +348,67 @@ class AgenteBaseadoEmObjetivos(Agent):
 
         if not self.has_item:
             # Planeja ir até o item mais próximo
-            if self.conhece_itens:
-                item_mais_proximo = min(
-                    self.conhece_itens,
-                    key=lambda item: abs(item['posicao'][0] - self.pos[0]) + abs(item['posicao'][1] - self.pos[1])
-                )
-                proxima_posicao = caminho_para_destino(self.pos, item_mais_proximo['posicao'], self.model.grid)
+            if self.conhece_itens :
 
-                # Se chegou ao item, tenta pegá-lo
-                if self.pos == item_mais_proximo['posicao']:
-                    itens_na_posicao = self.model.grid.get_cell_list_contents([self.pos])
-                    for obj in itens_na_posicao:
-                        if isinstance(obj, Item):
-                            self.pegar_item(obj)
+                # Inicializa uma variável para guardar o item mais próximo
+                item_mais_proximo = None
+
+                # Filtra apenas itens cuja posição ainda não está na memória compartilhada
+                itens_disponiveis = [
+                    item for item in self.conhece_itens
+                    if item['posicao'] not in self.model.memoria_compartilhadaAgenteObjetivo
+                ]
+                print('buscando por:', self.unique_id,' ', itens_disponiveis)
+                print('itens_disponiveis:',self.unique_id,' ', itens_disponiveis)
+                print('memoria_compartilhadaAgenteObjetivo:',self.unique_id,' ', self.model.memoria_compartilhadaAgenteObjetivo)
+
+
+                if itens_disponiveis and self.emBuscaPor is None:
+                    item_mais_proximo = min(
+                        itens_disponiveis,
+                        key=lambda item: abs(item['posicao'][0] - self.pos[0]) + abs(item['posicao'][1] - self.pos[1])
+                    )
+                    proxima_posicao = caminho_para_destino(self.pos, item_mais_proximo['posicao'], self.model.grid)
+
+                    # Adiciona o item mais próximo à memória compartilhada
+                    self.model.memoria_compartilhadaAgenteObjetivo.append(item_mais_proximo['posicao'])
+                    self.emBuscaPor = item_mais_proximo['posicao']
+                    print(f"Item na posição {item_mais_proximo['posicao']} adicionado à memória compartilhada.")
+
+
+                elif self.emBuscaPor is not None:
+                    print(' Tem obj:')
+                    # Se chegou ao item, tenta pegá-lo
+                    if self.pos == self.emBuscaPor:
+                        itens_na_posicao = self.model.grid.get_cell_list_contents([self.pos])
+                        for obj in itens_na_posicao:
+                            if isinstance(obj, Item):
+                                self.pegar_item(obj)
+                                proxima_posicao = caminho_para_destino(self.pos, self.model.base, self.model.grid)
+                    else:
+                        proxima_posicao = caminho_para_destino(self.pos, self.emBuscaPor,
+                                                               self.model.grid)
+
+
+                else:
+                    print('Fazendo nada')
+                    return 0
+
             else:
-                # Caso não conheça itens, move-se aleatoriamente
-                possible_steps = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
-                proxima_posicao = self.random.choice(possible_steps)
+                print('Fazendo nada')
+                return 0
+
         else:
             # Se está carregando um item, vai para a base
             proxima_posicao = caminho_para_destino(self.pos, self.model.base, self.model.grid)
 
         # Move o agente para a próxima posição
+        print('--                                 --')
         self.model.grid.move_agent(self, proxima_posicao)
 
         # Entrega o item ao chegar na base
         if self.pos == self.model.base:
             self.entregar_item()
-
 
 def visualize_model(ax, model, step_number):
     # Cria uma matriz vazia para representar o grid
@@ -452,6 +487,7 @@ class RandomWalkModel(Model):
         self.items_cristal = []
         self.items_estrutura = []
         self.contribuicao_total = 0
+        self.memoria_compartilhadaAgenteObjetivo = []
 
         # Criando os agentes Reativos simples
         for i in range(self.num_reativosSimples):
@@ -530,13 +566,13 @@ class RandomWalkModel(Model):
 
 
 # Parameters
-agents = { 'agenteEstado': 0 , 'agenteSimples': 0, 'agenteObjetivo': 1 }
+agents = { 'agenteEstado': 0, 'agenteSimples': 0, 'agenteObjetivo': 1 }
 width = 6
 height = 6
-num_cristais = 0
-num_metais = 2
+num_cristais = 4
+num_metais = 0
 num_estruturas_old = 0
-num_steps = 60
+num_steps = 20
 base = (0, 0)
 MEMORIA_COMPARTILHADA_AGENTES_ESTADO = np.full((width, height), "Desconhecido", dtype=object)
 
@@ -559,9 +595,14 @@ plt.show()  # Mantém a janela aberta ao final da simulação
 
 
 
-
 print(f"Contribuição total: {model.contribuicao_total}")
 for agent in model.schedule.agents:
     #if isinstance(agent,ReativoSimples):
     nome = agent.nome
     print(f"Contribuição do agente {nome}{agent.unique_id}: {agent.contribuicao}")
+
+
+
+    # Tá demorando um passo só para pegar o item == ok
+    # Não pegar item com peso 1 apenas ==
+    # Visualizar contribuições == é só fechar janela
