@@ -4,6 +4,7 @@ from mesa import Agent, Model
 from mesa.space import MultiGrid
 from mesa.time import SimultaneousActivation
 import random
+import time
 
 
 class Item(Agent):
@@ -354,9 +355,12 @@ class AgenteBaseadoEmObjetivos(Agent):
                 item_mais_proximo = None
 
                 # Filtra apenas itens cuja posição ainda não está na memória compartilhada
+
+
                 itens_disponiveis = [
                     item for item in self.conhece_itens
-                    if item['posicao'] not in self.model.memoria_compartilhadaAgenteObjetivo
+                    if item['tipo'] in ["Cristal Energético", "Metal Raro"] and
+                       item['posicao'] not in self.model.memoria_compartilhadaAgenteObjetivo
                 ]
                 print('buscando por:', self.unique_id,' ', itens_disponiveis)
                 print('itens_disponiveis:',self.unique_id,' ', itens_disponiveis)
@@ -368,6 +372,7 @@ class AgenteBaseadoEmObjetivos(Agent):
                         itens_disponiveis,
                         key=lambda item: abs(item['posicao'][0] - self.pos[0]) + abs(item['posicao'][1] - self.pos[1])
                     )
+
                     proxima_posicao = caminho_para_destino(self.pos, item_mais_proximo['posicao'], self.model.grid)
 
                     # Adiciona o item mais próximo à memória compartilhada
@@ -569,9 +574,9 @@ class RandomWalkModel(Model):
 agents = { 'agenteEstado': 0, 'agenteSimples': 0, 'agenteObjetivo': 1 }
 width = 6
 height = 6
-num_cristais = 4
+num_cristais = 1
 num_metais = 0
-num_estruturas_old = 0
+num_estruturas_old = 4
 num_steps = 20
 base = (0, 0)
 MEMORIA_COMPARTILHADA_AGENTES_ESTADO = np.full((width, height), "Desconhecido", dtype=object)
@@ -589,20 +594,21 @@ for step in range(num_steps):
     plt.pause(1)  # Aguarda 0.5 segundo antes da próxima atualização
     model.step()  # Realiza o próximo passo no modelo
 
+time.sleep(5)
 plt.ioff()  # Desativa o modo interativo
-plt.show()  # Mantém a janela aberta ao final da simulação
+plt.close()  # Fecha automaticamente a janela
 
 
 
 
-print(f"Contribuição total: {model.contribuicao_total}")
+print(f"\n\n\n \tContribuição total: {model.contribuicao_total}")
 for agent in model.schedule.agents:
     #if isinstance(agent,ReativoSimples):
     nome = agent.nome
-    print(f"Contribuição do agente {nome}{agent.unique_id}: {agent.contribuicao}")
+    print(f" \tContribuição do agente {nome}{agent.unique_id}: {agent.contribuicao}")
 
 
 
     # Tá demorando um passo só para pegar o item == ok
-    # Não pegar item com peso 1 apenas ==
+    # Não pegar item com peso 1 apenas == ok
     # Visualizar contribuições == é só fechar janela
