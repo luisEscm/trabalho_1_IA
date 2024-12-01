@@ -84,7 +84,7 @@ class ReativoSimples(Agent):
         self.has_item = False
         self.item = None
         self.contribuicao = 0
-        self.quant_itens_entregues = 0
+        self.quant_entregue = 0
         self.nome = "AR"
 
     def pegar_item(self, item):
@@ -98,7 +98,7 @@ class ReativoSimples(Agent):
     def entregar_item(self):
         if self.has_item:
             self.contribuicao += self.item.pontos
-            self.quant_itens_entregues += 1
+            self.quant_entregue += 1
 
             self.has_item = False
             self.item.carregado_por = []
@@ -158,7 +158,7 @@ class AgentEstados(Agent):
         self.has_item = False
         self.item = None
         self.contribuicao = 0
-        self.quant_itens_entregues = 0
+        self.quant_entregue = 0
         self.nome = "AE"
         #self.memoria = np.full((model.grid.width, model.grid.height), "Desconhecido", dtype=object)  # Inicializa a memória com "Desconhecido".
     
@@ -178,7 +178,7 @@ class AgentEstados(Agent):
     def entregar_item(self):
         if self.item:
             self.contribuicao += self.item.pontos
-            self.quant_itens_entregues += 1
+            self.quant_entregue += 1
 
             self.has_item = False
             self.item.carregado_por = []
@@ -738,30 +738,36 @@ class AgenteCooperativo(Agent):
         Atualiza a lista de objetivos com base nos itens "livres" e que estão registrados
         pelo agente BDI, e a memoria de visitados com base nos outros agentes.
         """
-        bdi = self.model.bdi  # Solicita o estado do grid ao modelo
+        bdi = self.model.bdi 
         lista_itens_ocupados = []
+        distancias = []
         posicoes = []
+        px, py = self.pos
+        bx, by = self.model.base
+
         for agent in self.model.schedule.agents:
             if isinstance(agent, AgenteBaseadoEmObjetivos2):
                 if agent.objetivo_info != None:
                     lista_itens_ocupados.append(agent.objetivo_info)
-            posicoes.append(agent.pos)
+                posicoes.append(agent.pos)
 
-
-        conhece_itens_temp = [obj for obj in bdi.recursos]
+                        # nome+unique_id do item | posição do item | distancia agente para item | distancia item para base
+        conhece_itens_temp = [(obj_nome, obj_pos, abs(obj_pos[0] - px) + abs(obj_pos[1] - py),
+                               (abs(obj_pos[0] - bx) + abs(obj_pos[1] - by))) for obj_nome, obj_pos in bdi.recursos]
         self.conhece_itens = conhece_itens_temp
-        print(self.conhece_itens)
-        print(lista_itens_ocupados)
+        #print(self.conhece_itens)
+        #print(lista_itens_ocupados)
 
         for item in conhece_itens_temp:
             if "EA" in item[0] and lista_itens_ocupados.count(item) >=2:
                 self.conhece_itens.remove(item)
+
             elif item in lista_itens_ocupados:
                 self.conhece_itens.remove(item)
 
         for (px, py) in posicoes:
              self.memoria[px][py] = "Visitado"
-        print(self.conhece_itens)
+        #print(self.conhece_itens)
 
     def pegar_item(self, item):
         """
@@ -950,6 +956,182 @@ class AgenteCooperativo(Agent):
             
         return proximo_passo
 
+    def considerar_objetivo(self):
+
+        bx, by = self.model.base
+        px, py = self.pos
+        bdi = self.model.bdi
+        info_objetivo = self.objetivo_info
+        if info_objetivo == "Base":
+            return
+        quant_objetivo_atual = 0
+        objetivos = {}
+        posicoes = []
+        for agent in self.model.schedule.agents:
+            if isinstance(agent,AgenteCooperativo):
+                if agent.objetivo_info != None and agent.objetivo_info != "Base":
+                    print(objetivos.get(agent.objetivo_info[0]))
+                    if objetivos.get(agent.objetivo_info[0]) is None:
+                        objetivos[agent.objetivo_info] = []
+
+                    objetivos[agent.objetivo_info[0]].append((agent, agent.abjetivo_info[3]))
+                    if agent.objetivo_info[0] == info_objetivo:
+                        quant_objetivo_atual += 1
+                posicoes.append((agent, agent.pos))
+
+        # atualizando objetivo
+        if info_objetivo is not None:
+            estruturas_antigas = [(obj_nome, obj_pos, abs(obj_pos[0] - px) + abs(obj_pos[1] - py),
+                                (abs(obj_pos[0] - bx) + abs(obj_pos[1] - by))) for obj_nome, obj_pos in bdi.recursos if "EA" in obj_pos]
+            
+            dist_total_atual = info_objetivo[2] + info_objetivo[3]
+            valor = 10
+
+            if "EA" in info_objetivo[0]:
+                valor = 50
+            elif "MR" in info_objetivo[1]:
+                valor = 20
+            
+
+            for estrutura in estruturas_antigas:
+                if objetivos.get(estrutura[0]) is not None:
+                    info = objetivos[estrutura[0]]
+                    if len(info) >= 2:
+                        continue
+
+                    segundo_agente = None
+                    mais_distante = (self, estrutura[2])
+                    terceiro_agente = None
+                    for info_agent in info:
+                        if info_agent[1] > mais_distante[1]:
+                            mais_distante = info_agent
+                            segundo_agente = info_agent
+                        
+                        if segundo_agente is None or segundo_agente == mais_distante:
+                            segundo_agente = info_agent
+
+                        elif terceiro_agente is None:
+                            terceiro_agente = info_agent
+
+                    # agente atual é dos 3 agentes o mais distante do objeto então escolhe não ir
+                    if mais_distante[0].unique_id == self.unique_id and len(info) >= 2:
+                        continue
+
+                    # agente ou é o de distancia média ou o de menor distancia
+                    terceiro_agente = (self, estrutura[2])
+                    
+                    dist_total = mais_distante[1] + estrutura[3]
+                    custo = min(round((50 - valor)/10), 6)
+
+                    agente_distante = mais_distante[0]
+                    # calcula o custo de se vale mais apenas ir atras do seu objetivo ou ir atras de um objetivo mais próximo
+                    if dist_total < dist_total_atual+custo:
+                        self.objetivo_info = estrutura
+                        self.emBuscaPor = estrutura[1]
+
+                        if len(info) >= 2:
+                            agente_distante.objetivo_info = None
+                            agente_distante.emBuscaPor = None
+
+                        quant_objetivo_atual = 2
+
+                    # Se o valor de custo for igual verifica se ele está sosinho ou não se estiver vai ajudar, caso o valor
+                    # seja maior, considera que é melhor ir atras do que estava buscando e ajudar depois
+                    elif dist_total == dist_total_atual and len(info) < 2:
+                        self.objetivo_info = estrutura
+                        self.emBuscaPor = estrutura[1]
+                        quant_objetivo_atual = 2
+
+                    # se estiver indo até uma estrutura antiga sosinho e a outra estiver com alguem ele vai atrasd da outra estrutura
+                    elif "EA" in self.objetivo_info[0] and len(info) < 2 and quant_objetivo_atual < 2:
+                        self.objetivo_info = estrutura
+                        self.emBuscaPor = estrutura[1]
+                        quant_objetivo_atual = 2
+        else:
+            objetivos_agent = [(obj_nome, obj_pos, abs(obj_pos[0] - px) + abs(obj_pos[1] - py),
+                            (abs(obj_pos[0] - bx) + abs(obj_pos[1] - by))) for obj_nome, obj_pos in bdi.recursos]
+            
+            objetivo_custo_benef = None
+            for objetivo in objetivos_agent:
+                if objetivo_custo_benef is None:
+                    
+                    if objetivos.get(objetivo[0]) is None:
+                        objetivo_custo_benef = objetivo
+                    
+                    elif "EA" in objetivo[0] and len(objetivos[objetivo[0]]) < 2:
+                        objetivo_custo_benef = objetivo
+                
+                else:
+                    if ("EA" not in objetivo[0] and objetivos.get(objetivo[0]) is not None):
+                        continue
+
+                    elif "EA" in objetivo[0]:
+                        if objetivos.get(objetivo[0]) is not None:
+                            info = objetivos[objetivo[0]]
+                            if len(info) >= 2:
+                                continue
+                            agente_atras_obj = info[0]
+                            mais_proximo = (self, objetivo[2])
+                            tx, ty = objetivo[1]
+                            for posicao in posicoes:
+                                if posicao[0].unique_id != agente_atras_obj[0].unique_id:
+                                    px_temp, py_temp = posicao[1]
+
+                                    dist = (tx - px_temp) + (ty - py_temp)
+                                    if dist < mais_proximo:
+                                        mais_proximo = (posicao[0], dist)
+                            
+                            if mais_proximo[0].unique_id != self.unique_id:
+                                continue
+
+                            valor = 10 # valor no sentido de peso, é possivel aumentalo em prol de ajustar o custo beneficio
+                            if "EA" in objetivo_custo_benef[0]:
+                                valor = 50
+                            elif "MR" in objetivo_custo_benef[0]:
+                                valor = 20
+                            
+                            custo = min(round((50 - valor)/10), 6)
+                            dist_total_1 = objetivo_custo_benef[2] + objetivo_custo_benef[3] # objetivo escolhido até o momento
+                            dist_total_2 = objetivo[2] + objetivo[3] # objetivo sendo avaliado
+
+                            if dist_total_2 < dist_total_1+custo:
+                                objetivo_custo_benef = objetivo
+
+                            elif dist_total_2 == dist_total_1+custo:
+                                if "EA" not in objetivo_custo_benef[0]:
+                                    objetivo_custo_benef = objetivo
+                                elif objetivos.get(objetivo_custo_benef[0]) is None:
+                                    objetivo_custo_benef = objetivo
+                            
+                            elif "EA" in objetivo_custo_benef[0] and objetivos.get(objetivo_custo_benef[0]) is None:
+                                objetivo_custo_benef = objetivo
+                    
+                    else:
+                        dist_obj = objetivo[2] + objetivo[3]
+                        dist_custo_benef = objetivo_custo_benef[2] + objetivo_custo_benef[3]
+
+                        valor_obj = 10
+                        valor_custo_benef = 10
+
+                        if "MR" in objetivo[0]:
+                            valor_obj = 20
+                        
+                        if "MR" in objetivo_custo_benef[0]:
+                            valor_custo_benef = 20
+                        elif "EA" in objetivo_custo_benef[0]:
+                            valor_custo_benef = 50
+
+                        custo = min(round((valor_obj - valor_custo_benef)/10),6)
+                        # custo sempre vai para a distancia do objeto que não é EA para fazer a comparação
+                        if dist_obj < dist_custo_benef+custo:
+                            objetivo_custo_benef = objetivo
+                        elif "EA" not in objetivo_custo_benef[0] and dist_obj == dist_custo_benef:
+                            if valor_obj > valor_custo_benef:
+                                objetivo_custo_benef = objetivo
+
+                        elif "EA" in objetivo_custo_benef[0] and objetivos.get(objetivo_custo_benef[0]) is not None:
+                            continue
+
     def step(self):
         print(f"__________________________________{self.nome}{self.unique_id}__________________________________")
         possiveis_passos = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
@@ -964,7 +1146,7 @@ class AgenteCooperativo(Agent):
         if not self.has_item:
             # Planeja ir até o item marcado como objetivo
             if self.conhece_itens or self.emBuscaPor is not None:
-
+                self.considerar_objetivo()
                 proxima_posicao = self.buscar_objetivo()
 
             else:
@@ -996,7 +1178,7 @@ class AgentBDI(Agent):
         #self.has_item = False
         #self.item = None
         self.contribuicao = 0
-        self.num_contribuicao = 0
+        self.quant_entregue = 0
         self.nome = f"AB{self.unique_id}"
         self.agentes_pos = {}
         self.recursos = []
@@ -1053,7 +1235,7 @@ class AgentBDI(Agent):
 
     def adicionar_contribuicao(self, item):
         if item != None:
-            self.num_contribuicao += 1
+            self.quant_entregue += 1
             self.contribuicao += item.pontos
         #pass
 
@@ -1075,7 +1257,7 @@ def visualize_model(ax, model, step_number, pasta_save, save, salvar=False):
         agent_class = type(agent).__name__
         print(f"Agent {agent.unique_id} at position ({x}, {y}) is of class {agent_class}")
 
-        if isinstance(agent, ReativoSimples) or isinstance(agent, AgentEstados) or isinstance(agent, AgenteBaseadoEmObjetivos2):
+        if isinstance(agent, ReativoSimples) or isinstance(agent, AgentEstados) or isinstance(agent, AgenteBaseadoEmObjetivos2) or isinstance(agent, AgenteCooperativo):
             nome = agent.nome
 
             if agent.has_item:
@@ -1132,6 +1314,7 @@ class RandomWalkModel(Model):
         self.num_reativosSimples = agents['agenteSimples']
         self.num_agentsEstados = agents['agenteEstado']
         self.num_agentesObjetivos = agents['agenteObjetivo']
+        self.num_agentesCooperativos = agents['agenteCooperativo']
         self.grid = MultiGrid(width, height, False)
         self.random = random.Random(seed)
         self.schedule = SimultaneousActivation(self)
@@ -1163,6 +1346,12 @@ class RandomWalkModel(Model):
         # Criando os agentes baseados em objetivos
         for i in range(self.num_agentesObjetivos):
             a = AgenteBaseadoEmObjetivos2(self)
+            self.schedule.add(a)
+            self.grid.place_agent(a, base)
+
+        # Criando os agentes baseados em objetivos
+        for i in range(self.num_agentesCooperativos):
+            a = AgenteCooperativo(self)
             self.schedule.add(a)
             self.grid.place_agent(a, base)
 
@@ -1231,7 +1420,7 @@ class RandomWalkModel(Model):
 
 
 # Parameters
-agents = { 'agenteEstado': 0, 'agenteSimples': 0, 'agenteObjetivo': 2 }
+agents = { 'agenteEstado': 0, 'agenteSimples': 0, 'agenteObjetivo': 0, 'agenteCooperativo': 2 }
 width = 11
 height = 11
 num_cristais = 2
