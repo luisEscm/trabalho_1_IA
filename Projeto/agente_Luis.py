@@ -343,14 +343,16 @@ class AgenteBaseadoEmObjetivos2(Agent):
 
     def atualizar_informacoes_ambiente(self):
         """
-        Atualiza a lista de itens conhecidos com base no estado atual do grid.
+        Atualiza a lista de objetivos com base nos itens "livres" e que estão registrados
+        pelo agente BDI, e a memoria de visitados com base nos outros agentes.
         """
         bdi = self.model.bdi  # Solicita o estado do grid ao modelo
         lista_itens_ocupados = []
         posicoes = []
         for agent in self.model.schedule.agents:
             if isinstance(agent, AgenteBaseadoEmObjetivos2):
-                lista_itens_ocupados.append(agent.objetivo_info)
+                if agent.objetivo_info != None:
+                    lista_itens_ocupados.append(agent.objetivo_info)
             posicoes.append(agent.pos)
 
 
@@ -369,8 +371,12 @@ class AgenteBaseadoEmObjetivos2(Agent):
              self.memoria[px][py] = "Visitado"
         print(self.conhece_itens)
 
-
     def pegar_item(self, item):
+        """
+        Função que pega um item
+        Args:
+            item (Item): item a ser pego pelo agente
+        """
         if item.type == "Cristal Energético" or item.type == "Metal Raro":
             self.has_item = True
             self.item = item
@@ -381,8 +387,8 @@ class AgenteBaseadoEmObjetivos2(Agent):
             item.carregado_por.append(self)
             #if len(item.carregado_por) == 2:
                 #for agent in item.carregado_por:
-            agent.has_item = True
-            agent.item = item
+            self.has_item = True
+            self.item = item
             self.objetivo_info = "Base"
         self.model.bdi.recurso_coletado(item)
 
@@ -402,15 +408,20 @@ class AgenteBaseadoEmObjetivos2(Agent):
             elif self.item.type == "Estrutura Antiga":
                 
                 carregadores = self.item.carregado_por
+                colega = self
+                print(carregadores)
                 for carry in carregadores:
-                    if carry.nome != self.nome:
+                    if carry.unique_id != self.unique_id:
                         colega = carry
                         break
+
                 if colega.pos == self.pos:
                     self.item.carregado_por.clear()
 
                 if not self.item.carregado_por:
                     self.model.remove_item(self.item)
+                
+                print(carregadores)
                 
                 self.item = None
                 self.has_item = False
@@ -455,7 +466,104 @@ class AgenteBaseadoEmObjetivos2(Agent):
 
         return None  # Retorna None se nenhuma célula desconhecida for encontrada
 
+    def procurar_itens(self, possiveis_passos):
+        """
+        Função para procurar por itens ainda não conhecidos evitando revisitar posições que ja tenha visitado
+        Args:
+            possiveis_passos (list): lista dos passos que podem ser tomados pelo agente
+        Returns:
+            tuple: coordenadas do proximo passo a ser tomado no formato (x, y)
+        """
+        possiveis_passos_nao_visitados = [
+            p for p in possiveis_passos if self.memoria[p[0]][p[1]] == "Desconhecido"
+        ]
+        #print(possiveis_passos_nao_visitados)
+
+        if not possiveis_passos_nao_visitados:  # Se todos já foram visitados
+            print("Buscando globalmente uma posição desconhecida.")
+            destino_global = self.encontrar_desconhecido_mais_proximo(self.pos,
+                                                                        self.memoria)
+            if destino_global:
+                proxima_posicao = caminho_para_destino(self.pos, destino_global,
+                                                self.model.grid)  # Usando a função para ir ao destino
+            else:
+                possiveis_passos_nao_visitados = possiveis_passos  # Considera todos os passos disponíveis.
+        else:
+            proxima_posicao = self.random.choice(possiveis_passos_nao_visitados)  # Escolhe entre os não visitados.
+        
+        return proxima_posicao
+
+    def buscar_objetivo(self):
+        """
+        Função que escolhe um objetivo se não tiver um, e anda na direção do objetivo
+        Returns:
+            tuple: coordenadas do proximo passo a ser tomado pelo agente no formato (x, y)
+        """
+        item_mais_proximo = None
+
+        itens_disponiveis = self.conhece_itens
+        print('buscando por:', self.unique_id,' ', self.emBuscaPor)
+        print('itens_disponiveis:',self.unique_id,' ', itens_disponiveis)
+
+
+        if itens_disponiveis and self.emBuscaPor is None:
+            # pega o primeiro item disponivel na lista de objetivos
+            item_mais_proximo = itens_disponiveis[0]
+
+            proxima_posicao = caminho_para_destino(self.pos, item_mais_proximo[1], self.model.grid)
+
+            self.objetivo_info = item_mais_proximo
+            self.emBuscaPor = item_mais_proximo[1]
+
+
+        elif self.emBuscaPor is not None:
+            proxima_posicao = caminho_para_destino(self.pos, self.emBuscaPor,
+                                                    self.model.grid)
+
+        else:
+            print('Fazendo nada')
+            proxima_posicao = self.pos
+
+        return proxima_posicao
+
+    def voltar_base(self):
+        """
+        Função que faz o agente voltar para base caso tenha um item com ele, caso seja estrutura antiga só
+        anda se houver um outro agente segurando o item.
+        Returns:
+            tuple: coordenadas do proximo passo a ser tomado pelo agente no formato (x, y)
+        """
+        proximo_passo = self.pos
+
+        if self.has_item:
+            item = self.item
+            if item.type == "Estrutura Antiga":
+                if len(item.carregado_por) < 2:
+                    return proximo_passo
+                
+                colega_pos = self.pos
+                
+                for carry in item.carregado_por:
+                    if carry.unique_id != self.unique_id and carry.objetivo_info == "Base":
+                        colega_pos = carry.pos
+                        print(colega_pos)
+
+                print(colega_pos)
+                if colega_pos == self.pos: #TODO considerar se deve literalmente andar estando no mesmo bloco
+                                           # se sim temos de fazer um logica para que se movam 1 só vez no step
+                                           # e não duas tipo ao inves de um dar o passo e o outro dar um passo 
+                                           # depois, um dos dois controla o passo dos dois assim fazem um "step" 
+                                           # pelos dois
+                    proximo_passo = caminho_para_destino(self.pos, self.model.base, self.model.grid)
+                else:
+                    proximo_passo = colega_pos
+            else:
+                proximo_passo = caminho_para_destino(self.pos, self.model.base, self.model.grid)
+            
+        return proximo_passo
+
     def step(self):
+        print(f"__________________________________{self.nome}{self.unique_id}__________________________________")
         possiveis_passos = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
         if self.model.tem_bdi:
             self.model.bdi.localizar_itens(possiveis_passos)
@@ -464,78 +572,20 @@ class AgenteBaseadoEmObjetivos2(Agent):
         self.atualizar_informacoes_ambiente()
         proxima_posicao = self.pos
         print(f"{self.nome}{self.unique_id} condição: {self.has_item}")
+
         if not self.has_item:
-            # Planeja ir até o item mais próximo
+            # Planeja ir até o item marcado como objetivo
             if self.conhece_itens or self.emBuscaPor is not None:
 
-                # Inicializa uma variável para guardar o item mais próximo
-                item_mais_proximo = None
-
-                # Filtra apenas itens cuja posição ainda não está na memória compartilhada
-
-
-                itens_disponiveis = self.conhece_itens
-                print('buscando por:', self.unique_id,' ', self.emBuscaPor)
-                print('itens_disponiveis:',self.unique_id,' ', itens_disponiveis)
-
-
-                if itens_disponiveis and self.emBuscaPor is None:
-                    item_mais_proximo = itens_disponiveis[0]
-                    #print(item_mais_proximo)
-
-                    proxima_posicao = caminho_para_destino(self.pos, item_mais_proximo[1], self.model.grid)
-
-                    # Adiciona o item mais próximo à memória compartilhada
-                    #self.model.memoria_compartilhadaAgenteObjetivo.append(item_mais_proximo['posicao'])
-                    self.objetivo_info = item_mais_proximo
-                    self.emBuscaPor = item_mais_proximo[1]
-                    #print(f"Item na posição {self.emBuscaPor} adicionado à memória compartilhada.")
-
-
-                elif self.emBuscaPor is not None:
-                    print(' Tem obj:')
-                    # Se chegou ao item, tenta pegá-lo
-                    if self.pos == self.emBuscaPor:
-                        itens_na_posicao = self.model.grid.get_cell_list_contents([self.pos])
-                        for obj in itens_na_posicao:
-                            if isinstance(obj, Item):
-                                self.pegar_item(obj)
-                                proxima_posicao = caminho_para_destino(self.pos, self.model.base, self.model.grid)
-                                break
-                    else:
-                        proxima_posicao = caminho_para_destino(self.pos, self.emBuscaPor,
-                                                               self.model.grid)
-
-
-                else:
-                    print('Fazendo nada')
-                    return 0
+                proxima_posicao = self.buscar_objetivo()
 
             else:
-                possiveis_passos_nao_visitados = [
-                    p for p in possiveis_passos if self.memoria[p[0]][p[1]] == "Desconhecido"
-                ]
-
-                #print(possiveis_passos_nao_visitados)
-                #print(possiveis_passos)
-                if not possiveis_passos_nao_visitados:  # Se todos já foram visitados
-                    print("Buscando globalmente uma posição desconhecida.")
-                    destino_global = self.encontrar_desconhecido_mais_proximo(self.pos,
-                                                                              self.memoria)
-                    if destino_global:
-                        #print(f"Agente {self.unique_id}: Calculando caminho para {destino_global}.")
-                        proxima_posicao = caminho_para_destino(self.pos, destino_global,
-                                                     self.model.grid)  # Usando a função para ir ao destino
-                    else:
-                        possiveis_passos_nao_visitados = possiveis_passos  # Considera todos os passos disponíveis.
-                else:
-                    proxima_posicao = self.random.choice(possiveis_passos_nao_visitados)  # Escolhe entre os não visitados.
+                proxima_posicao = self.procurar_itens(possiveis_passos=possiveis_passos)
                 
-                #self.model.grid.move_agent(self, passo)
-
         else:
             # Se está carregando um item, vai para a base
-            proxima_posicao = caminho_para_destino(self.pos, self.model.base, self.model.grid)
+            proxima_posicao = self.voltar_base()
+            #proxima_posicao = caminho_para_destino(self.pos, self.model.base, self.model.grid)
 
         # Move o agente para a próxima posição
         print('--                                 --')
@@ -545,6 +595,11 @@ class AgenteBaseadoEmObjetivos2(Agent):
         # Entrega o item ao chegar na base
         if self.pos == self.model.base and self.has_item:
             self.entregar_item()
+        elif self.pos == self.emBuscaPor and not self.has_item:
+            itens_na_posicao = self.model.grid.get_cell_list_contents([self.pos])
+            for obj in itens_na_posicao:
+                if isinstance(obj, Item):
+                    self.pegar_item(obj)
 
 class AgenteBaseadoEmObjetivos(Agent):
     def __init__(self, model):
@@ -664,6 +719,277 @@ class AgenteBaseadoEmObjetivos(Agent):
         if self.pos == self.model.base:
             self.entregar_item()
 
+#TODO ainda falta ajustar o cooperativo para definir o objetivo como o mais viavel no sentido de pegar os de maior valor e os mais pertos
+class AgenteCooperativo(Agent):
+    def __init__(self, model):
+        super().__init__(model)
+        self.has_item = False
+        self.item = None
+        self.contribuicao = 0
+        self.quant_entregue = 0
+        self.nome = "ACO"
+        self.conhece_itens = []  # Inicializa a lista de itens conhecidos vazia
+        self.emBuscaPor = None
+        self.objetivo_info = None
+        self.memoria = np.full((model.grid.width, model.grid.height), "Desconhecido", dtype=object)
+
+    def atualizar_informacoes_ambiente(self):
+        """
+        Atualiza a lista de objetivos com base nos itens "livres" e que estão registrados
+        pelo agente BDI, e a memoria de visitados com base nos outros agentes.
+        """
+        bdi = self.model.bdi  # Solicita o estado do grid ao modelo
+        lista_itens_ocupados = []
+        posicoes = []
+        for agent in self.model.schedule.agents:
+            if isinstance(agent, AgenteBaseadoEmObjetivos2):
+                if agent.objetivo_info != None:
+                    lista_itens_ocupados.append(agent.objetivo_info)
+            posicoes.append(agent.pos)
+
+
+        conhece_itens_temp = [obj for obj in bdi.recursos]
+        self.conhece_itens = conhece_itens_temp
+        print(self.conhece_itens)
+        print(lista_itens_ocupados)
+
+        for item in conhece_itens_temp:
+            if "EA" in item[0] and lista_itens_ocupados.count(item) >=2:
+                self.conhece_itens.remove(item)
+            elif item in lista_itens_ocupados:
+                self.conhece_itens.remove(item)
+
+        for (px, py) in posicoes:
+             self.memoria[px][py] = "Visitado"
+        print(self.conhece_itens)
+
+    def pegar_item(self, item):
+        """
+        Função que pega um item
+        Args:
+            item (Item): item a ser pego pelo agente
+        """
+        if item.type == "Cristal Energético" or item.type == "Metal Raro":
+            self.has_item = True
+            self.item = item
+            item.carregado_por = [self]
+            self.objetivo_info = "Base"
+
+        elif item.type == "Estrutura Antiga" and len(item.carregado_por) < 2:
+            item.carregado_por.append(self)
+            #if len(item.carregado_por) == 2:
+                #for agent in item.carregado_por:
+            self.has_item = True
+            self.item = item
+            self.objetivo_info = "Base"
+        self.model.bdi.recurso_coletado(item)
+
+    def entregar_item(self):
+        if self.item:
+            self.contribuicao += self.item.pontos
+            self.quant_entregue += 1
+
+            if self.item.type != "Estrutura Antiga":
+                self.has_item = False
+                self.item.carregado_por = []
+                self.model.remove_item(self.item)
+                self.item = None
+                self.emBuscaPor = None
+                self.objetivo_info = None
+            
+            elif self.item.type == "Estrutura Antiga":
+                
+                carregadores = self.item.carregado_por
+                colega = self
+                print(carregadores)
+                for carry in carregadores:
+                    if carry.unique_id != self.unique_id:
+                        colega = carry
+                        break
+
+                if colega.pos == self.pos:
+                    self.item.carregado_por.clear()
+
+                if not self.item.carregado_por:
+                    self.model.remove_item(self.item)
+                
+                print(carregadores)
+                
+                self.item = None
+                self.has_item = False
+                self.emBuscaPor = None
+                self.objetivo_info = None
+
+    def encontrar_desconhecido_mais_proximo(self, posicao_atual, memoria):
+        """
+        Busca globalmente a célula desconhecida mais próxima na memória compartilhada.
+
+        Args:
+            posicao_atual (tuple): Posição atual do agente (x, y).
+            memoria (numpy.ndarray): Matriz de memória compartilhada.
+
+        Returns:
+            tuple: Coordenadas (x, y) da célula desconhecida mais próxima ou None se não houver.
+        """
+        from collections import deque
+
+        fila = deque([posicao_atual])
+        visitados = set()
+        visitados.add(posicao_atual)
+
+        while fila:
+            atual = fila.popleft()
+            x, y = atual
+
+            # Verifica se a célula atual é desconhecida
+            if memoria[x][y] == "Desconhecido":
+                return atual
+
+            # Adiciona vizinhos na fila
+            vizinhos = [
+                (nx, ny) for nx, ny in [
+                    (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)
+                ]
+                if 0 <= nx < memoria.shape[0] and 0 <= ny < memoria.shape[1] and (nx, ny) not in visitados
+            ]
+
+            fila.extend(vizinhos)
+            visitados.update(vizinhos)
+
+        return None  # Retorna None se nenhuma célula desconhecida for encontrada
+
+    def procurar_itens(self, possiveis_passos):
+        """
+        Função para procurar por itens ainda não conhecidos evitando revisitar posições que ja tenha visitado
+        Args:
+            possiveis_passos (list): lista dos passos que podem ser tomados pelo agente
+        Returns:
+            tuple: coordenadas do proximo passo a ser tomado no formato (x, y)
+        """
+        possiveis_passos_nao_visitados = [
+            p for p in possiveis_passos if self.memoria[p[0]][p[1]] == "Desconhecido"
+        ]
+        #print(possiveis_passos_nao_visitados)
+
+        if not possiveis_passos_nao_visitados:  # Se todos já foram visitados
+            print("Buscando globalmente uma posição desconhecida.")
+            destino_global = self.encontrar_desconhecido_mais_proximo(self.pos,
+                                                                        self.memoria)
+            if destino_global:
+                proxima_posicao = caminho_para_destino(self.pos, destino_global,
+                                                self.model.grid)  # Usando a função para ir ao destino
+            else:
+                possiveis_passos_nao_visitados = possiveis_passos  # Considera todos os passos disponíveis.
+        else:
+            proxima_posicao = self.random.choice(possiveis_passos_nao_visitados)  # Escolhe entre os não visitados.
+        
+        return proxima_posicao
+
+    def buscar_objetivo(self):
+        """
+        Função que escolhe um objetivo se não tiver um, e anda na direção do objetivo
+        Returns:
+            tuple: coordenadas do proximo passo a ser tomado pelo agente no formato (x, y)
+        """
+        item_mais_proximo = None
+
+        itens_disponiveis = self.conhece_itens
+        print('buscando por:', self.unique_id,' ', self.emBuscaPor)
+        print('itens_disponiveis:',self.unique_id,' ', itens_disponiveis)
+
+
+        if itens_disponiveis and self.emBuscaPor is None:
+            # pega o primeiro item disponivel na lista de objetivos
+            item_mais_proximo = itens_disponiveis[0]
+
+            proxima_posicao = caminho_para_destino(self.pos, item_mais_proximo[1], self.model.grid)
+
+            self.objetivo_info = item_mais_proximo
+            self.emBuscaPor = item_mais_proximo[1]
+
+
+        elif self.emBuscaPor is not None:
+            proxima_posicao = caminho_para_destino(self.pos, self.emBuscaPor,
+                                                    self.model.grid)
+
+        else:
+            print('Fazendo nada')
+            proxima_posicao = self.pos
+
+        return proxima_posicao
+
+    def voltar_base(self):
+        """
+        Função que faz o agente voltar para base caso tenha um item com ele, caso seja estrutura antiga só
+        anda se houver um outro agente segurando o item.
+        Returns:
+            tuple: coordenadas do proximo passo a ser tomado pelo agente no formato (x, y)
+        """
+        proximo_passo = self.pos
+
+        if self.has_item:
+            item = self.item
+            if item.type == "Estrutura Antiga":
+                if len(item.carregado_por) < 2:
+                    return proximo_passo
+                
+                colega_pos = self.pos
+                
+                for carry in item.carregado_por:
+                    if carry.unique_id != self.unique_id and carry.objetivo_info == "Base":
+                        colega_pos = carry.pos
+                        print(colega_pos)
+
+                print(colega_pos)
+                if colega_pos == self.pos:
+                    proximo_passo = caminho_para_destino(self.pos, self.model.base, self.model.grid)
+                else:
+                    proximo_passo = colega_pos
+            else:
+                proximo_passo = caminho_para_destino(self.pos, self.model.base, self.model.grid)
+            
+        return proximo_passo
+
+    def step(self):
+        print(f"__________________________________{self.nome}{self.unique_id}__________________________________")
+        possiveis_passos = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
+        if self.model.tem_bdi:
+            self.model.bdi.localizar_itens(possiveis_passos)
+
+        # Atualiza os itens conhecidos no início de cada passo
+        self.atualizar_informacoes_ambiente()
+        proxima_posicao = self.pos
+        print(f"{self.nome}{self.unique_id} condição: {self.has_item}")
+
+        if not self.has_item:
+            # Planeja ir até o item marcado como objetivo
+            if self.conhece_itens or self.emBuscaPor is not None:
+
+                proxima_posicao = self.buscar_objetivo()
+
+            else:
+                proxima_posicao = self.procurar_itens(possiveis_passos=possiveis_passos)
+                
+        else:
+            # Se está carregando um item, vai para a base
+            proxima_posicao = self.voltar_base()
+            #proxima_posicao = caminho_para_destino(self.pos, self.model.base, self.model.grid)
+
+        # Move o agente para a próxima posição
+        print('--                                 --')
+        self.memoria[self.pos[0]][self.pos[1]] = "Visitado"
+        self.model.grid.move_agent(self, proxima_posicao)
+
+        # Entrega o item ao chegar na base
+        if self.pos == self.model.base and self.has_item:
+            self.entregar_item()
+        elif self.pos == self.emBuscaPor and not self.has_item:
+            itens_na_posicao = self.model.grid.get_cell_list_contents([self.pos])
+            for obj in itens_na_posicao:
+                if isinstance(obj, Item):
+                    self.pegar_item(obj)
+
+
 class AgentBDI(Agent):
     def __init__(self, model):
         super().__init__(model)
@@ -755,15 +1081,19 @@ def visualize_model(ax, model, step_number, pasta_save, save, salvar=False):
             if agent.has_item:
                 item_carregado = agent.item
                 if item_carregado.type == "Cristal Energético":
-                    grid[x, y] += f"{nome}{agent.unique_id}(CE)"
+                    grid[x, y] += f"{nome}{agent.unique_id}(CE{item_carregado.unique_id})"
                 elif item_carregado.type == "Metal Raro":
-                    grid[x, y] += f"{nome}{agent.unique_id}(MR)"
+                    grid[x, y] += f"{nome}{agent.unique_id}(MR{item_carregado.unique_id})"
                 elif item_carregado.type == "Estrutura Antiga":
-                    grid[x, y] += f"{nome}{agent.unique_id}(EA)"
+                    grid[x, y] += f"{nome}{agent.unique_id}(EA{item_carregado.unique_id})"
                 else:
-                    grid[x, y] += f"{nome}{agent.unique_id}(I)"
+                    grid[x, y] += f"{nome}{agent.unique_id}(I{item_carregado.unique_id})"
             else:
                 grid[x, y] += f"{nome}{agent.unique_id} "
+        elif isinstance(agent, AgentBDI):
+            nome = agent.nome + str(agent.unique_id)
+            
+            grid[x, y] += f"{nome}"
 
     # Add single items to the grid
     for item in model.items_cristal:
@@ -813,6 +1143,7 @@ class RandomWalkModel(Model):
         self.items_cristal = []
         self.items_estrutura = []
         self.contribuicao_total = 0
+        self.quant_entregue_total = 0
         self.memoria_compartilhadaAgenteObjetivo = []
         self.tem_bdi = tem_bdi
         if tem_bdi:
@@ -869,6 +1200,8 @@ class RandomWalkModel(Model):
     def remove_item(self, item):
         if item is not None:
             self.contribuicao_total += item.pontos
+            self.quant_entregue_total += 1
+            self.bdi.adicionar_contribuicao(item)
             if item.type == "Cristal Energético":
                 self.items_cristal.remove(item)
             elif item.type == "Metal Raro":
@@ -903,7 +1236,7 @@ width = 11
 height = 11
 num_cristais = 2
 num_metais = 3
-num_estruturas_old = 0
+num_estruturas_old = 2
 num_steps = 20
 base = (5, 5)
 MEMORIA_COMPARTILHADA_AGENTES_ESTADO = np.full((width, height), "Desconhecido", dtype=object)
@@ -916,12 +1249,12 @@ model = RandomWalkModel(agents, width, height, num_cristais, num_metais, num_est
 # Define o loop principal do modelo
 fig, ax = plt.subplots(figsize=(10, 10))  # Cria a figura e o eixo fora da função
 plt.ion()  # Ativa o modo interativo
-
+visualize_model(ax, model, " inicial", pasta_save= pasta_save, save= run, salvar=True)
 for step in range(num_steps):
-    print(f"step{step}")
+    print(f"###############step{step}###############")
+    model.step()  # Realiza o próximo passo no modelo
     visualize_model(ax, model, step, pasta_save= pasta_save, save= run, salvar=True)  # Atualiza a mesma janela
     plt.pause(1)  # Aguarda 0.5 segundo antes da próxima atualização
-    model.step()  # Realiza o próximo passo no modelo
 
 time.sleep(5)
 plt.ioff()  # Desativa o modo interativo
@@ -935,6 +1268,7 @@ for agent in model.schedule.agents:
     #if isinstance(agent,ReativoSimples):
     nome = agent.nome
     print(f" \tContribuição do agente {nome}{agent.unique_id}: {agent.contribuicao}")
+    print(f" \tContribuição do agente {nome}{agent.unique_id}: {agent.quant_entregue}")
 
 
 
