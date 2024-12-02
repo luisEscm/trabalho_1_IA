@@ -346,13 +346,13 @@ class AgenteBaseadoEmObjetivos2(Agent):
         Atualiza a lista de objetivos com base nos itens "livres" e que estão registrados
         pelo agente BDI, e a memoria de visitados com base nos outros agentes.
         """
-        bdi = self.model.bdi  # Solicita o estado do grid ao modelo
+        bdi = self.model.bdi 
         lista_itens_ocupados = []
         posicoes = []
         for agent in self.model.schedule.agents:
-            if isinstance(agent, AgenteBaseadoEmObjetivos2):
-                if agent.objetivo_info != None:
-                    lista_itens_ocupados.append(agent.objetivo_info)
+            if isinstance(agent, AgenteBaseadoEmObjetivos2) and isinstance(agent, AgenteCooperativo):
+                if agent.objetivo_info != None and agent.objetivo_info != "Base":
+                    lista_itens_ocupados.append(agent.objetivo_info[0])
             posicoes.append(agent.pos)
 
 
@@ -362,9 +362,9 @@ class AgenteBaseadoEmObjetivos2(Agent):
         print(lista_itens_ocupados)
 
         for item in conhece_itens_temp:
-            if "EA" in item[0] and lista_itens_ocupados.count(item) >=2:
+            if "EA" in item[0] and lista_itens_ocupados.count(item[0]) >=2:
                 self.conhece_itens.remove(item)
-            elif item in lista_itens_ocupados:
+            elif item[0] in lista_itens_ocupados:
                 self.conhece_itens.remove(item)
 
         for (px, py) in posicoes:
@@ -719,7 +719,8 @@ class AgenteBaseadoEmObjetivos(Agent):
         if self.pos == self.model.base:
             self.entregar_item()
 
-#TODO ainda falta ajustar o cooperativo para definir o objetivo como o mais viavel no sentido de pegar os de maior valor e os mais pertos
+#TODO verificar se realmente esta funcionando em todos os casos, provalmente esta
+# mas não tenho 100% de certeza
 class AgenteCooperativo(Agent):
     def __init__(self, model):
         super().__init__(model)
@@ -740,34 +741,34 @@ class AgenteCooperativo(Agent):
         """
         bdi = self.model.bdi 
         lista_itens_ocupados = []
-        distancias = []
+        #distancias = []
         posicoes = []
         px, py = self.pos
         bx, by = self.model.base
 
         for agent in self.model.schedule.agents:
-            if isinstance(agent, AgenteBaseadoEmObjetivos2):
-                if agent.objetivo_info != None:
-                    lista_itens_ocupados.append(agent.objetivo_info)
+            if isinstance(agent, AgenteBaseadoEmObjetivos2) or isinstance(agent, AgenteBaseadoEmObjetivos2):
+                if agent.objetivo_info != None and agent.objetivo_info != "Base":
+                    lista_itens_ocupados.append(agent.objetivo_info[0])
                 posicoes.append(agent.pos)
 
                         # nome+unique_id do item | posição do item | distancia agente para item | distancia item para base
         conhece_itens_temp = [(obj_nome, obj_pos, abs(obj_pos[0] - px) + abs(obj_pos[1] - py),
                                (abs(obj_pos[0] - bx) + abs(obj_pos[1] - by))) for obj_nome, obj_pos in bdi.recursos]
         self.conhece_itens = conhece_itens_temp
-        #print(self.conhece_itens)
+        print(f"itens conhecidos 1: {self.conhece_itens}")
         #print(lista_itens_ocupados)
 
         for item in conhece_itens_temp:
-            if "EA" in item[0] and lista_itens_ocupados.count(item) >=2:
+            if "EA" in item[0] and lista_itens_ocupados.count(item[0]) >=2:
                 self.conhece_itens.remove(item)
 
-            elif item in lista_itens_ocupados:
+            elif item[0] in lista_itens_ocupados:
                 self.conhece_itens.remove(item)
 
         for (px, py) in posicoes:
              self.memoria[px][py] = "Visitado"
-        #print(self.conhece_itens)
+        print(f"itens conhecidos 1: {self.conhece_itens}")
 
     def pegar_item(self, item):
         """
@@ -906,7 +907,8 @@ class AgenteCooperativo(Agent):
 
         if itens_disponiveis and self.emBuscaPor is None:
             # pega o primeiro item disponivel na lista de objetivos
-            item_mais_proximo = itens_disponiveis[0]
+            self.considerar_objetivo()
+            item_mais_proximo = self.objetivo_info
 
             proxima_posicao = caminho_para_destino(self.pos, item_mais_proximo[1], self.model.grid)
 
@@ -957,7 +959,7 @@ class AgenteCooperativo(Agent):
         return proximo_passo
 
     def considerar_objetivo(self):
-
+        print(f"considerando Objetivo: {self.objetivo_info}")
         bx, by = self.model.base
         px, py = self.pos
         bdi = self.model.bdi
@@ -969,15 +971,52 @@ class AgenteCooperativo(Agent):
         posicoes = []
         for agent in self.model.schedule.agents:
             if isinstance(agent,AgenteCooperativo):
-                if agent.objetivo_info != None and agent.objetivo_info != "Base":
-                    print(objetivos.get(agent.objetivo_info[0]))
-                    if objetivos.get(agent.objetivo_info[0]) is None:
-                        objetivos[agent.objetivo_info] = []
 
-                    objetivos[agent.objetivo_info[0]].append((agent, agent.abjetivo_info[3]))
+                if agent.objetivo_info != None and agent.objetivo_info != "Base":
+                    print(f"tem chave no dict: {objetivos.get(agent.objetivo_info[0])}")
+                    print(f"chave: {agent.objetivo_info}")
+
+                    if objetivos.get(agent.objetivo_info[0]) is None:
+                        objetivos[agent.objetivo_info[0]] = []
+
+                    objetivos[agent.objetivo_info[0]].append((agent, agent.objetivo_info[2]))
+
                     if agent.objetivo_info[0] == info_objetivo:
                         quant_objetivo_atual += 1
                 posicoes.append((agent, agent.pos))
+
+            elif isinstance(agent, AgenteBaseadoEmObjetivos2):
+                if agent.objetivo_info != None and agent.objetivo_info != "Base":
+                    print(f"tem chave no dict: {objetivos.get(agent.objetivo_info[0])}")
+                    print(f"chave: {agent.objetivo_info}")
+
+                    if objetivos.get(agent.objetivo_info[0]) is None:
+                        objetivos[agent.objetivo_info[0]] = []
+                    
+                    posicao_item = bdi.posicao_item(agent.objetivo_info[0])
+                    if posicao_item is not None:
+                        tx, ty = posicao_item
+                    else:
+                        tx, ty = agent.pos
+                    px_temp, py_temp = agent.pos
+                    dist = abs(tx - px_temp) + abs(ty - py_temp)
+                    objetivos[agent.objetivo_info[0]].append((agent, dist))
+
+                    if agent.objetivo_info[0] == info_objetivo:
+                        quant_objetivo_atual += 1
+                posicoes.append((agent, agent.pos))
+
+        if info_objetivo is not None and objetivos.get(info_objetivo[0]) is not None:
+            info = objetivos[info_objetivo[0]]
+            if len(info) > 2 and "EA" in info_objetivo[0]:
+                menor = (self, self.objetivo_info[2])
+                for agent_info in info:
+                    if agent_info[1] < menor[1]:
+                        menor = agent_info
+                
+                if menor[0].unique_id != self.unique_id:
+                    self.objetivo_info = None
+                    self.emBuscaPor = None
 
         # atualizando objetivo
         if info_objetivo is not None:
@@ -991,7 +1030,6 @@ class AgenteCooperativo(Agent):
                 valor = 50
             elif "MR" in info_objetivo[1]:
                 valor = 20
-            
 
             for estrutura in estruturas_antigas:
                 if objetivos.get(estrutura[0]) is not None:
@@ -1047,6 +1085,7 @@ class AgenteCooperativo(Agent):
                         self.objetivo_info = estrutura
                         self.emBuscaPor = estrutura[1]
                         quant_objetivo_atual = 2
+
         else:
             objetivos_agent = [(obj_nome, obj_pos, abs(obj_pos[0] - px) + abs(obj_pos[1] - py),
                             (abs(obj_pos[0] - bx) + abs(obj_pos[1] - by))) for obj_nome, obj_pos in bdi.recursos]
@@ -1131,6 +1170,10 @@ class AgenteCooperativo(Agent):
 
                         elif "EA" in objetivo_custo_benef[0] and objetivos.get(objetivo_custo_benef[0]) is not None:
                             continue
+            self.objetivo_info = objetivo_custo_benef
+            self.emBuscaPor = objetivo_custo_benef[1]
+
+        print(f"Objetivo considerado: {self.objetivo_info}")
 
     def step(self):
         print(f"__________________________________{self.nome}{self.unique_id}__________________________________")
@@ -1145,6 +1188,7 @@ class AgenteCooperativo(Agent):
 
         if not self.has_item:
             # Planeja ir até o item marcado como objetivo
+            print(f"Objetivo: {self.objetivo_info}")
             if self.conhece_itens or self.emBuscaPor is not None:
                 self.considerar_objetivo()
                 proxima_posicao = self.buscar_objetivo()
@@ -1179,7 +1223,7 @@ class AgentBDI(Agent):
         #self.item = None
         self.contribuicao = 0
         self.quant_entregue = 0
-        self.nome = f"AB{self.unique_id}"
+        self.nome = "AB"
         self.agentes_pos = {}
         self.recursos = []
 
@@ -1218,6 +1262,8 @@ class AgentBDI(Agent):
             elif item.type == "Metal Raro":
                 nome = 'MR'
             elif item.type == "Estrutura Antiga":
+                if len(item.carregado_por) < 2:
+                    return
                 nome = 'EA'
             else:
                 nome = 'I'
@@ -1227,7 +1273,6 @@ class AgentBDI(Agent):
             if item_removido in self.recursos:
                 self.recursos.remove(item_removido)
             
-    
     def atualizar_agent_pos(self, agent):
         nome = agent.nome
         pos = agent.pos
@@ -1238,6 +1283,12 @@ class AgentBDI(Agent):
             self.quant_entregue += 1
             self.contribuicao += item.pontos
         #pass
+
+    def posicao_item(self, item_nome):
+        for recurso in self.recursos:
+            if recurso[0] == item_nome:
+                return recurso[1]
+        return None
 
     def step(self):
         print(self.recursos)
@@ -1420,13 +1471,14 @@ class RandomWalkModel(Model):
 
 
 # Parameters
-agents = { 'agenteEstado': 0, 'agenteSimples': 0, 'agenteObjetivo': 0, 'agenteCooperativo': 2 }
+agents = { 'agenteEstado': 0, 'agenteSimples': 0, 'agenteObjetivo': 2, 'agenteCooperativo': 2 }
 width = 11
 height = 11
-num_cristais = 2
-num_metais = 3
-num_estruturas_old = 2
-num_steps = 20
+num_cristais = 4
+num_metais = 5
+num_estruturas_old = 4
+num_steps = 45
+tempo_espera = 0.5
 base = (5, 5)
 MEMORIA_COMPARTILHADA_AGENTES_ESTADO = np.full((width, height), "Desconhecido", dtype=object)
 run = verificar_save_name(pasta_save, "teste_agentesObjetivo")
@@ -1443,7 +1495,7 @@ for step in range(num_steps):
     print(f"###############step{step}###############")
     model.step()  # Realiza o próximo passo no modelo
     visualize_model(ax, model, step, pasta_save= pasta_save, save= run, salvar=True)  # Atualiza a mesma janela
-    plt.pause(1)  # Aguarda 0.5 segundo antes da próxima atualização
+    plt.pause(tempo_espera)  # Aguarda 0.5 segundo antes da próxima atualização
 
 time.sleep(5)
 plt.ioff()  # Desativa o modo interativo
@@ -1453,11 +1505,12 @@ plt.close()  # Fecha automaticamente a janela
 
 
 print(f"\n\n\n \tContribuição total: {model.contribuicao_total}")
+print(f"\tcontribuição total em quantidade: {model.quant_entregue_total}")
 for agent in model.schedule.agents:
     #if isinstance(agent,ReativoSimples):
     nome = agent.nome
     print(f" \tContribuição do agente {nome}{agent.unique_id}: {agent.contribuicao}")
-    print(f" \tContribuição do agente {nome}{agent.unique_id}: {agent.quant_entregue}")
+    print(f" \tContribuição do agente quantidade {nome}{agent.unique_id}: {agent.quant_entregue}")
 
 
 
