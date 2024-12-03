@@ -1,0 +1,17 @@
+        Contribuição total: 250
+        contribuição total em quantidade: 10
+
+        Contribuição do agente ACO2: 120
+        Contribuição do agente quantidade ACO2: 3
+
+        Contribuição do agente ACO3: 80
+        Contribuição do agente quantidade ACO3: 4
+
+        Contribuição do agente ACO4: 120
+        Contribuição do agente quantidade ACO4: 3
+
+        Contribuição do agente ACO5: 80
+        Contribuição do agente quantidade ACO5: 3
+
+        Contribuição do agente AB1: 250
+        Contribuição do agente quantidade AB1: 10

@@ -1,0 +1,11 @@
+        Contribuição total: 90
+        contribuição total em quantidade: 4
+
+        Contribuição do agente ABO2: 60
+        Contribuição do agente quantidade ABO2: 2
+
+        Contribuição do agente ABO3: 80
+        Contribuição do agente quantidade ABO3: 3
+
+        Contribuição do agente AB1: 90
+        Contribuição do agente quantidade AB1: 4
